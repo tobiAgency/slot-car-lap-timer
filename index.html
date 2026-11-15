@@ -1,0 +1,626 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Slot Car Lap Timer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@500;600;700&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: timing-tower. Picture of the track on the left, a stack of timing readouts on the right; one column on a phone. */
+:root{
+  --bg:#eceef1; --surface:#ffffff; --ink:#14181d; --muted:#5b6570; --line:#d3d8de;
+  --accent:#d3361c;      /* rail red: controls, the tracked car */
+  --best:#7a35e8;        /* timing purple: fastest lap */
+  --good:#0f8446; --warn:#a86200;
+  --stage:#0c0e10;
+  --display:"Barlow Condensed","Arial Narrow",system-ui,sans-serif;
+  --body:"Barlow",system-ui,-apple-system,"Segoe UI",sans-serif;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#101316; --surface:#191e23; --ink:#eef1f4; --muted:#98a2ad; --line:#2a323a;
+    --accent:#ff5d40; --best:#b792ff; --good:#3fce80; --warn:#f0a93a; --stage:#060708;
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#101316; --surface:#191e23; --ink:#eef1f4; --muted:#98a2ad; --line:#2a323a;
+  --accent:#ff5d40; --best:#b792ff; --good:#3fce80; --warn:#f0a93a; --stage:#060708;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.4;-webkit-text-size-adjust:100%}
+.wrap{max-width:1180px;margin:0 auto;padding:16px;display:flex;flex-direction:column;gap:14px}
+header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 16px;justify-content:space-between}
+h1{font-family:var(--display);font-weight:700;font-size:30px;letter-spacing:.01em;margin:0;text-transform:uppercase;line-height:1}
+h2{font-family:var(--display);font-weight:600;font-size:18px;letter-spacing:.06em;text-transform:uppercase;margin:0;color:var(--muted)}
+.row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button,.filebtn{font:600 15px var(--body);color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 13px;cursor:pointer;min-height:40px;display:inline-flex;align-items:center;gap:6px}
+button:hover,.filebtn:hover{border-color:var(--muted)}
+button:focus-visible,.filebtn:focus-within,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+button[aria-pressed="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.filebtn input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.filebtn{position:relative}
+.note{font-size:14px;color:var(--muted);margin:0;max-width:65ch}
+.grid{display:grid;grid-template-columns:minmax(0,1.45fr) minmax(0,1fr);gap:14px;align-items:start}
+@media (max-width:860px){.grid{grid-template-columns:minmax(0,1fr)}}
+.col{display:flex;flex-direction:column;gap:14px;min-width:0}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:14px;display:flex;flex-direction:column;gap:12px;min-width:0}
+.stage{background:var(--stage);border-radius:12px;overflow:hidden;display:flex;justify-content:center;position:relative}
+#view{display:block;max-width:100%;max-height:72vh;width:auto;height:auto;touch-action:none;cursor:crosshair}
+.badge{position:absolute;left:10px;top:10px;font:600 13px var(--display);letter-spacing:.08em;text-transform:uppercase;background:rgba(0,0,0,.66);color:#fff;padding:4px 9px;border-radius:999px;display:flex;gap:7px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;background:#8a949e}
+.dot.on{background:#3fce80}
+.hint{font-weight:500;margin:0}
+.swatch{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);background:repeating-linear-gradient(45deg,var(--line) 0 4px,transparent 4px 8px)}
+.fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+label.f{display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted);font-weight:500}
+input[type=number],select{font:500 16px var(--body);color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;min-height:40px;width:100%}
+input[type=range]{width:100%;accent-color:var(--accent);min-height:40px}
+.pair{display:flex;gap:6px}
+.pair select{width:auto;flex:none}
+label.c{display:flex;gap:8px;align-items:center;font-size:15px;min-height:40px}
+label.c input{width:18px;height:18px;accent-color:var(--accent)}
+.tiles{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.tile{background:var(--surface);padding:10px 12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile.big{grid-column:span 3;flex-direction:row;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.k{font:600 12px var(--display);letter-spacing:.09em;text-transform:uppercase;color:var(--muted)}
+.v{font:600 26px/1.05 var(--display);font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.v small{font-size:14px;font-weight:500;color:var(--muted);margin-left:3px}
+.big .v{font-size:56px;font-weight:700}
+.v.best{color:var(--best)}
+.pill{font:600 12px var(--display);letter-spacing:.07em;text-transform:uppercase;border-radius:999px;padding:2px 8px;border:1px solid currentColor;white-space:nowrap}
+.pill.best{color:var(--best)} .pill.slow{color:var(--warn)} .pill.good{color:var(--good)}
+#chart{width:100%;height:150px;display:block}
+.tablewrap{overflow-x:auto;max-height:340px;overflow-y:auto}
+table{border-collapse:collapse;width:100%;font-variant-numeric:tabular-nums}
+th{font:600 12px var(--display);letter-spacing:.09em;text-transform:uppercase;color:var(--muted);text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--surface)}
+td{text-align:right;padding:7px 8px;border-bottom:1px solid var(--line);font-size:15px;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+td.t{font:600 19px var(--display)}
+.empty{color:var(--muted);font-size:14px;margin:0}
+textarea{width:100%;min-height:90px;font:13px ui-monospace,Menlo,Consolas,monospace;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:8px;padding:8px}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Slot Car Lap Timer</h1>
+    <div class="row" role="group" aria-label="Picture source">
+      <button id="btnCam" type="button">Use camera</button>
+      <label class="filebtn" id="lblClip">Load a clip<input id="fileClip" type="file" accept="video/*"></label>
+      <button id="btnDemo" type="button" aria-pressed="true">Demo track</button>
+    </div>
+  </header>
+  <p class="note" id="camNote" hidden></p>
+
+  <div class="grid">
+    <div class="col">
+      <div class="stage">
+        <canvas id="view" width="960" height="540" aria-label="Track view. Tap the car to pick its color, or drag to draw the finish line."></canvas>
+        <div class="badge"><span class="dot" id="dot"></span><span id="badge">Demo</span></div>
+      </div>
+
+      <div class="card">
+        <p class="hint" id="hint">Loading…</p>
+        <div class="row">
+          <span class="swatch" id="swatch" title="Locked car color"></span>
+          <div class="row" role="group" aria-label="What a tap on the picture does">
+            <button id="toolColor" type="button" aria-pressed="true">Pick car color</button>
+            <button id="toolLine" type="button" aria-pressed="false">Draw finish line</button>
+          </div>
+          <select id="camSel" aria-label="Camera" hidden style="width:auto;max-width:220px"></select>
+          <button id="btnPlay" type="button" class="primary" hidden>Play</button>
+          <button id="btnRestart" type="button" hidden>Restart clip</button>
+        </div>
+        <div class="fields">
+          <label class="f">Color match: <span id="tolOut">45</span>
+            <input id="tol" type="range" min="5" max="100" value="45">
+          </label>
+          <label class="f">One lap of track
+            <span class="pair"><input id="len" type="number" min="0" step="0.1" inputmode="decimal" placeholder="e.g. 24">
+            <select id="unit" aria-label="Length unit"><option value="ft">ft</option><option value="m">m</option></select></span>
+          </label>
+          <label class="f">Car scale
+            <select id="scale"><option value="24">1:24</option><option value="32" selected>1:32</option><option value="43">1:43</option><option value="64">1:64 (HO)</option></select>
+          </label>
+          <label class="f">Shortest possible lap (s)
+            <input id="minLap" type="number" min="0.2" step="0.1" value="1" inputmode="decimal">
+          </label>
+        </div>
+        <div class="row">
+          <label class="c"><input id="mask" type="checkbox"> Show what matches the color</label>
+          <label class="c"><input id="sound" type="checkbox"> Beep on each lap</label>
+        </div>
+      </div>
+    </div>
+
+    <div class="col">
+      <div class="tiles" aria-live="off">
+        <div class="tile big"><div><div class="k">Last lap</div><div class="v" id="mLast">–</div></div><div id="mLastTag"></div></div>
+        <div class="tile"><div class="k">Best lap</div><div class="v best" id="mBest">–</div></div>
+        <div class="tile"><div class="k">This lap</div><div class="v" id="mCur">–</div></div>
+        <div class="tile"><div class="k">Laps</div><div class="v" id="mLaps">0</div></div>
+        <div class="tile"><div class="k">Average, clean laps</div><div class="v" id="mAvg">–</div></div>
+        <div class="tile"><div class="k">Consistency</div><div class="v" id="mSd">–</div></div>
+        <div class="tile"><div class="k">Slow laps</div><div class="v" id="mSlow">0</div></div>
+        <div class="tile"><div class="k">Last lap speed</div><div class="v" id="mSpd">–</div></div>
+        <div class="tile"><div class="k">Top speed, est.</div><div class="v" id="mTop">–</div></div>
+        <div class="tile"><div class="k">Scale top speed</div><div class="v" id="mScale">–</div></div>
+      </div>
+
+      <div class="card">
+        <h2>Lap times</h2>
+        <canvas id="chart" width="600" height="150" role="img" aria-label="Line chart of lap time by lap number"></canvas>
+      </div>
+
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <h2>Laps</h2>
+          <div class="row"><button id="btnCopy" type="button">Copy laps</button><button id="btnReset" type="button">Reset laps</button></div>
+        </div>
+        <div class="tablewrap">
+          <table><thead><tr><th>Lap</th><th>Time</th><th>Gap to best</th><th id="thSpd">Speed</th></tr></thead><tbody id="rows"></tbody></table>
+        </div>
+        <p class="empty" id="empty">No laps yet. A lap is logged each time the car crosses the finish line.</p>
+        <textarea id="csvOut" readonly hidden aria-label="Lap data as CSV"></textarea>
+      </div>
+    </div>
+  </div>
+  <video id="video" playsinline muted hidden></video>
+</div>
+
+<script>
+(function(){
+"use strict";
+const $ = id => document.getElementById(id);
+const view = $("view"), vctx = view.getContext("2d");
+const video = $("video");
+const proc = document.createElement("canvas");
+const pctx = proc.getContext("2d", {willReadFrequently:true});
+const maskCv = document.createElement("canvas"), mctx = maskCv.getContext("2d");
+const demoCv = document.createElement("canvas"); demoCv.width = 960; demoCv.height = 540;
+const dctx = demoCv.getContext("2d");
+const hasVFC = "requestVideoFrameCallback" in HTMLVideoElement.prototype;
+
+let PW = 480, PH = 270, CW = 60, CH = 34;
+let cells, bg, hitX, hitY, maskImg;
+
+const S = {
+  source:"demo", drawable:demoCv, stream:null, clipUrl:null, vfcOn:false, lastCT:-1,
+  target:null, line:null, drag:null, tool:"color",
+  prev:null, car:null, lastSeen:-1, trail:[],
+  dir:0, lastCross:null, lapPath:0, laps:[], pxPerUnit:null,
+  recent:[], speedPx:0, topPx:0, fps:0, lastT:0, now:0
+};
+
+/* ---------- sizing ---------- */
+function setSize(w, h){
+  const k = 480 / Math.max(w, h);
+  PW = Math.max(16, Math.round(w * k)); PH = Math.max(16, Math.round(h * k));
+  proc.width = maskCv.width = PW; proc.height = maskCv.height = PH;
+  view.width = PW * 2; view.height = PH * 2;
+  CW = Math.ceil(PW / 8); CH = Math.ceil(PH / 8);
+  cells = new Float32Array(CW * CH); bg = new Float32Array(CW * CH);
+  hitX = new Uint16Array(PW * PH); hitY = new Uint16Array(PW * PH);
+  maskImg = mctx.createImageData(PW, PH);
+}
+
+/* ---------- color ---------- */
+function rgb2hsv(r, g, b){
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b), c = mx - mn;
+  let h = 0;
+  if (c){ if (mx === r) h = ((g - b) / c) % 6; else if (mx === g) h = (b - r) / c + 2; else h = (r - g) / c + 4; h *= 60; if (h < 0) h += 360; }
+  return {h, s: mx ? c / mx : 0, v: mx / 255};
+}
+function pickColor(x, y){
+  if (S.drawable) { try { pctx.drawImage(S.drawable, 0, 0, PW, PH); } catch(e){} }
+  const x0 = Math.max(0, Math.min(PW - 5, Math.round(x) - 2)), y0 = Math.max(0, Math.min(PH - 5, Math.round(y) - 2));
+  const d = pctx.getImageData(x0, y0, 5, 5).data;
+  let r = 0, g = 0, b = 0;
+  for (let i = 0; i < d.length; i += 4){ r += d[i]; g += d[i+1]; b += d[i+2]; }
+  r /= 25; g /= 25; b /= 25;
+  setTarget(r, g, b);
+}
+function setTarget(r, g, b){
+  const t = rgb2hsv(r, g, b); t.css = "rgb(" + Math.round(r) + "," + Math.round(g) + "," + Math.round(b) + ")";
+  S.target = t; $("swatch").style.background = t.css;
+  if (bg) bg.fill(0);
+  S.prev = null; S.car = null; S.trail = [];
+}
+
+/* ---------- tracking ---------- */
+function analyse(t){
+  const src = S.drawable;
+  if (!src || (src === video && video.readyState < 2)) return;
+  if (S.lastT && t > S.lastT){ const f = 1 / (t - S.lastT); S.fps = S.fps ? S.fps * 0.9 + f * 0.1 : f; }
+  S.lastT = t; S.now = t;
+  try { pctx.drawImage(src, 0, 0, PW, PH); } catch(e){ return; }
+  if (!S.target) return;
+  const d = pctx.getImageData(0, 0, PW, PH).data;
+  const T = +$("tol").value, hTol = 6 + T * 0.35, sTol = 0.15 + T * 0.006, vTol = 0.2 + T * 0.006;
+  const th = S.target.h, ts = S.target.s, tv = S.target.v, chroma = ts >= 0.25;
+  const sMin = Math.max(0.2, ts - sTol), vMin = Math.max(0.15, tv - vTol), sMax = ts + sTol * 0.5, vT = vTol * 0.5;
+  cells.fill(0); let n = 0;
+  for (let y = 0, i = 0; y < PH; y++){
+    const cr = (y >> 3) * CW;
+    for (let x = 0; x < PW; x++, i += 4){
+      const r = d[i], g = d[i+1], b = d[i+2];
+      const mx = r > g ? (r > b ? r : b) : (g > b ? g : b), mn = r < g ? (r < b ? r : b) : (g < b ? g : b);
+      const c = mx - mn, s = mx ? c / mx : 0, v = mx / 255;
+      let ok;
+      if (chroma){
+        if (s < sMin || v < vMin) ok = false;
+        else {
+          let h; if (mx === r) h = ((g - b) / c) % 6; else if (mx === g) h = (b - r) / c + 2; else h = (r - g) / c + 4;
+          h *= 60; if (h < 0) h += 360;
+          let df = Math.abs(h - th); if (df > 180) df = 360 - df;
+          ok = df <= hTol;
+        }
+      } else ok = s <= sMax && Math.abs(v - tv) <= vT;
+      if (ok){ hitX[n] = x; hitY[n] = y; n++; cells[cr + (x >> 3)]++; }
+    }
+  }
+  if ($("mask").checked){
+    const m = maskImg.data; m.fill(0);
+    for (let j = 0; j < n; j++){ const p = (hitY[j] * PW + hitX[j]) * 4; m[p] = 255; m[p+1] = 235; m[p+2] = 60; m[p+3] = 210; }
+    mctx.putImageData(maskImg, 0, 0);
+  }
+  /* Pick the busiest cell after subtracting what has been sitting still, so a parked car or a red barrier is ignored. */
+  let bi = -1, bs = 3;
+  for (let j = 0; j < cells.length; j++){
+    const sc = cells[j] - 1.5 * bg[j];
+    if (sc > bs){ bs = sc; bi = j; }
+    bg[j] += (cells[j] - bg[j]) * 0.03;
+  }
+  if (bi < 0){ S.car = null; return; }
+  const cx = (bi % CW) * 8 + 4, cy = ((bi / CW) | 0) * 8 + 4;
+  let sx = 0, sy = 0, k = 0;
+  for (let j = 0; j < n; j++){ const dx = hitX[j] - cx, dy = hitY[j] - cy; if (dx * dx + dy * dy < 400){ sx += hitX[j]; sy += hitY[j]; k++; } }
+  if (k < 5){ S.car = null; return; }
+  onPosition(sx / k + 0.5, sy / k + 0.5, t);
+}
+
+function onPosition(x, y, t){
+  const cur = {x, y, t}, p = S.prev;
+  S.car = cur; S.lastSeen = t;
+  if (p && t > p.t && t - p.t < 0.7){
+    const dist = Math.hypot(x - p.x, y - p.y), dt = t - p.t, inst = dist / dt;
+    if (inst < Math.max(PW, PH) * 6){
+      S.lapPath += dist;
+      S.recent.push(inst); if (S.recent.length > 5) S.recent.shift();
+      S.speedPx = S.recent.reduce((a, b) => a + b, 0) / S.recent.length;
+      if (S.recent.length === 5 && S.speedPx > S.topPx) S.topPx = S.speedPx;
+      S.trail.push({x, y, s: S.speedPx}); if (S.trail.length > 360) S.trail.shift();
+    }
+    if (S.line){
+      const hit = crossing(p, cur, S.line);
+      if (hit){
+        const tc = p.t + hit.u * dt, minLap = Math.max(0.2, +$("minLap").value || 1);
+        if (!S.dir){ S.dir = hit.dir; S.lastCross = tc; S.lapPath = 0; renderAll(); }
+        else if (hit.dir === S.dir && tc - S.lastCross >= minLap){
+          addLap(tc - S.lastCross, S.lapPath); S.lastCross = tc; S.lapPath = 0;
+        }
+      }
+    }
+  } else { S.recent = []; if (!p || t < p.t || t - p.t >= 0.7) S.trail.push({x, y, s: 0, gap: true}); }
+  S.prev = cur;
+}
+function crossing(p, q, L){
+  const rx = q.x - p.x, ry = q.y - p.y, sx = L.x2 - L.x1, sy = L.y2 - L.y1, den = rx * sy - ry * sx;
+  if (Math.abs(den) < 1e-9) return null;
+  const u = ((L.x1 - p.x) * sy - (L.y1 - p.y) * sx) / den, w = ((L.x1 - p.x) * ry - (L.y1 - p.y) * rx) / den;
+  if (u < 0 || u >= 1 || w < 0 || w > 1) return null;
+  return {u, dir: den > 0 ? 1 : -1};
+}
+
+/* ---------- laps and stats ---------- */
+function median(a){ const s = a.slice().sort((x, y) => x - y), m = s.length >> 1; return s.length ? (s.length % 2 ? s[m] : (s[m-1] + s[m]) / 2) : 0; }
+function addLap(time, path){
+  const prevBest = S.laps.length ? Math.min(...S.laps.map(l => l.time)) : Infinity;
+  S.laps.push({n: S.laps.length + 1, time, path});
+  flagSlow(); calibrate(); renderAll();
+  beep(time < prevBest);
+}
+function flagSlow(){
+  const med = median(S.laps.map(l => l.time));
+  S.laps.forEach(l => { l.slow = S.laps.length >= 3 && l.time > med * 1.6; });
+}
+function trackLen(){ const v = parseFloat($("len").value); return v > 0 ? v : 0; }
+function calibrate(){
+  const L = trackLen(), clean = S.laps.filter(l => !l.slow && l.path > 0);
+  S.pxPerUnit = L && clean.length ? median(clean.map(l => l.path)) / L : null;
+}
+function resetLaps(){
+  S.laps = []; S.dir = 0; S.lastCross = null; S.lapPath = 0; S.topPx = 0; S.recent = []; S.pxPerUnit = null; S.trail = []; S.prev = null;
+  $("csvOut").hidden = true; renderAll();
+}
+function fmt(t){
+  if (t == null || !isFinite(t)) return "–";
+  if (t < 60) return t.toFixed(3);
+  const m = Math.floor(t / 60); return m + ":" + (t - m * 60).toFixed(3).padStart(6, "0");
+}
+function unit(){ return $("unit").value; }
+function spd(v){ return v.toFixed(v < 10 ? 2 : 1) + "<small>" + unit() + "/s</small>"; }
+function scaleSpd(v){
+  const sc = +$("scale").value;
+  return unit() === "ft" ? Math.round(v * 0.681818 * sc) + "<small>mph</small>" : Math.round(v * 3.6 * sc) + "<small>km/h</small>";
+}
+function renderAll(){
+  const laps = S.laps, L = trackLen(), clean = laps.filter(l => !l.slow);
+  const best = laps.length ? Math.min(...laps.map(l => l.time)) : null, last = laps[laps.length - 1];
+  $("mLast").textContent = last ? fmt(last.time) : "–";
+  $("mLastTag").innerHTML = !last ? "" : last.time === best && laps.length > 1 ? '<span class="pill best">Fastest lap</span>'
+    : last.slow ? '<span class="pill slow">Slow lap, off the track?</span>'
+    : laps.length > 1 && last.time < laps[laps.length - 2].time ? '<span class="pill good">Quicker than last</span>' : "";
+  $("mBest").textContent = fmt(best);
+  $("mLaps").textContent = laps.length;
+  $("mSlow").textContent = laps.filter(l => l.slow).length;
+  if (clean.length){
+    const avg = clean.reduce((a, l) => a + l.time, 0) / clean.length;
+    $("mAvg").textContent = fmt(avg);
+    $("mSd").innerHTML = clean.length > 1 ? "±" + Math.sqrt(clean.reduce((a, l) => a + (l.time - avg) ** 2, 0) / (clean.length - 1)).toFixed(3) + "<small>s</small>" : "–";
+  } else { $("mAvg").textContent = "–"; $("mSd").textContent = "–"; }
+  $("mSpd").innerHTML = last && L ? spd(L / last.time) : "–";
+  $("thSpd").textContent = "Speed, " + unit() + "/s";
+  const rows = laps.slice(-60).reverse().map(l =>
+    "<tr><td>" + l.n + (l.time === best ? ' <span class="pill best">Best</span>' : l.slow ? ' <span class="pill slow">Slow</span>' : "") + "</td>" +
+    '<td class="t">' + fmt(l.time) + "</td><td>" + (l.time === best ? "–" : "+" + (l.time - best).toFixed(3)) + "</td><td>" + (L ? (L / l.time).toFixed(2) : "–") + "</td></tr>").join("");
+  $("rows").innerHTML = rows; $("empty").hidden = laps.length > 0;
+  drawChart(); renderLive();
+}
+function renderLive(){
+  $("mCur").textContent = S.lastCross != null && S.now >= S.lastCross ? (S.now - S.lastCross).toFixed(1) : "–";
+  if (S.pxPerUnit && S.topPx){ const v = S.topPx / S.pxPerUnit; $("mTop").innerHTML = spd(v); $("mScale").innerHTML = scaleSpd(v); }
+  else { $("mTop").textContent = "–"; $("mScale").textContent = "–"; }
+  const seen = S.car && S.now - S.lastSeen < 0.5;
+  $("dot").className = "dot" + (seen ? " on" : "");
+  const name = S.source === "demo" ? "Demo" : S.source === "cam" ? "Live" : "Clip";
+  $("badge").textContent = name + (S.fps ? " · " + Math.round(S.fps) + " fps" : "") + (S.target ? (seen ? " · car in sight" : " · no moving car") : "");
+  let h;
+  if (S.source === "demo") h = "This is a simulated track so you can see the timer work. Use your camera or load a clip to time your own car.";
+  else if (!S.target) h = "Tap the car in the picture to lock on to its color. Park it somewhere easy to tap first.";
+  else if (!S.line) h = "Now drag a line across the track where laps should start and finish.";
+  else if (S.source === "clip" && video.paused) h = video.ended ? "Clip finished. Restart it to time it again." : "Ready. Press Play to time the clip.";
+  else if (!S.dir) h = "Ready. Timing starts the first time the car crosses the line.";
+  else if (!trackLen()) h = "Timing. Enter the length of one lap to get speeds.";
+  else h = "Timing. Laps count in the direction the car first crossed the line.";
+  $("hint").textContent = h;
+}
+
+/* ---------- chart ---------- */
+function drawChart(){
+  const cv = $("chart"), w = cv.clientWidth || 600, h = 150, dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = w * dpr; cv.height = h * dpr;
+  const c = cv.getContext("2d"); c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+  const cs = getComputedStyle(document.documentElement), col = n => cs.getPropertyValue(n).trim();
+  const laps = S.laps.slice(-30);
+  c.font = "500 12px Barlow, system-ui, sans-serif"; c.fillStyle = col("--muted"); c.textBaseline = "middle";
+  if (laps.length < 2){ c.fillText("The chart appears after two laps.", 4, h / 2); return; }
+  const ts = laps.map(l => l.time), lo = Math.min(...ts), hi = Math.max(...ts), span = hi - lo || 0.001;
+  const padL = 46, padR = 12, padT = 14, padB = 22, pw = w - padL - padR, ph = h - padT - padB;
+  const X = i => padL + (laps.length === 1 ? 0 : i / (laps.length - 1) * pw), Y = t => padT + (hi - t) / span * ph;
+  c.strokeStyle = col("--line"); c.lineWidth = 1;
+  [hi, lo].forEach(v => { c.beginPath(); c.moveTo(padL, Y(v)); c.lineTo(w - padR, Y(v)); c.stroke(); c.textAlign = "right"; c.fillText(v.toFixed(2) + "s", padL - 6, Y(v)); });
+  c.textAlign = "left"; c.textBaseline = "alphabetic"; c.fillText("Lap " + laps[0].n, padL, h - 5);
+  c.textAlign = "right"; c.fillText("Lap " + laps[laps.length - 1].n, w - padR, h - 5);
+  c.beginPath(); laps.forEach((l, i) => i ? c.lineTo(X(i), Y(l.time)) : c.moveTo(X(i), Y(l.time)));
+  c.strokeStyle = col("--ink"); c.lineWidth = 2; c.lineJoin = "round"; c.stroke();
+  const bestAll = Math.min(...S.laps.map(l => l.time));
+  laps.forEach((l, i) => {
+    c.beginPath(); c.arc(X(i), Y(l.time), l.time === bestAll ? 5 : 3, 0, 7);
+    c.fillStyle = l.time === bestAll ? col("--best") : l.slow ? col("--warn") : col("--ink"); c.fill();
+  });
+}
+
+/* ---------- view drawing ---------- */
+function draw(){
+  const k = view.width / PW, src = S.drawable;
+  if (src && !(src === video && video.readyState < 2)){ try { vctx.drawImage(src, 0, 0, view.width, view.height); } catch(e){} }
+  else { vctx.fillStyle = "#0c0e10"; vctx.fillRect(0, 0, view.width, view.height); }
+  if ($("mask").checked && S.target){ vctx.imageSmoothingEnabled = false; vctx.drawImage(maskCv, 0, 0, view.width, view.height); vctx.imageSmoothingEnabled = true; }
+  const tr = S.trail, top = S.topPx || 1;
+  vctx.lineWidth = 4; vctx.lineCap = "round";
+  for (let i = 1; i < tr.length; i++){
+    if (tr[i].gap) continue;
+    const f = Math.min(1, tr[i].s / top), a = 0.15 + 0.75 * i / tr.length;
+    vctx.strokeStyle = "rgba(" + Math.round(60 + 195 * f) + "," + Math.round(170 + 50 * f) + "," + Math.round(255 - 200 * f) + "," + a.toFixed(2) + ")";
+    vctx.beginPath(); vctx.moveTo(tr[i-1].x * k, tr[i-1].y * k); vctx.lineTo(tr[i].x * k, tr[i].y * k); vctx.stroke();
+  }
+  const L = S.drag || S.line;
+  if (L){
+    vctx.lineCap = "butt"; vctx.lineWidth = 7; vctx.strokeStyle = "#111"; vctx.setLineDash([]);
+    vctx.beginPath(); vctx.moveTo(L.x1 * k, L.y1 * k); vctx.lineTo(L.x2 * k, L.y2 * k); vctx.stroke();
+    vctx.lineWidth = 5; vctx.strokeStyle = "#fff"; vctx.setLineDash([9, 9]);
+    vctx.beginPath(); vctx.moveTo(L.x1 * k, L.y1 * k); vctx.lineTo(L.x2 * k, L.y2 * k); vctx.stroke(); vctx.setLineDash([]);
+  }
+  if (S.car && S.now - S.lastSeen < 0.5){
+    vctx.lineWidth = 3; vctx.strokeStyle = "#fff"; vctx.beginPath(); vctx.arc(S.car.x * k, S.car.y * k, 20, 0, 7); vctx.stroke();
+    vctx.lineWidth = 1.5; vctx.strokeStyle = "#000"; vctx.beginPath(); vctx.arc(S.car.x * k, S.car.y * k, 22, 0, 7); vctx.stroke();
+  }
+}
+
+/* ---------- pointer ---------- */
+function pt(e){ const r = view.getBoundingClientRect(); return {x: (e.clientX - r.left) / r.width * PW, y: (e.clientY - r.top) / r.height * PH}; }
+view.addEventListener("pointerdown", e => {
+  if (S.source === "demo") leaveDemoSetup();
+  const p = pt(e);
+  if (S.tool === "color"){ pickColor(p.x, p.y); if (!S.line) setTool("line"); renderAll(); }
+  else { S.drag = {x1: p.x, y1: p.y, x2: p.x, y2: p.y}; try { view.setPointerCapture(e.pointerId); } catch(_){} }
+});
+view.addEventListener("pointermove", e => { if (S.drag){ const p = pt(e); S.drag.x2 = p.x; S.drag.y2 = p.y; } });
+function endDrag(){
+  if (!S.drag) return;
+  const d = S.drag; S.drag = null;
+  if (Math.hypot(d.x2 - d.x1, d.y2 - d.y1) > 8){ S.line = d; resetLaps(); }
+}
+view.addEventListener("pointerup", endDrag); view.addEventListener("pointercancel", endDrag);
+function leaveDemoSetup(){ /* in the demo, a tap re-picks using the same tools; nothing to tear down */ }
+function setTool(t){ S.tool = t; $("toolColor").setAttribute("aria-pressed", t === "color"); $("toolLine").setAttribute("aria-pressed", t === "line"); }
+$("toolColor").onclick = () => setTool("color"); $("toolLine").onclick = () => setTool("line");
+
+/* ---------- sound ---------- */
+let actx = null;
+function beep(best){
+  if (!$("sound").checked) return;
+  try {
+    actx = actx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = actx.createOscillator(), g = actx.createGain(), t = actx.currentTime;
+    o.frequency.setValueAtTime(best ? 1320 : 880, t); g.gain.setValueAtTime(0.15, t); g.gain.exponentialRampToValueAtTime(0.001, t + (best ? 0.3 : 0.12));
+    o.connect(g).connect(actx.destination); o.start(t); o.stop(t + 0.32);
+  } catch(e){}
+}
+$("sound").addEventListener("change", () => { try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch(e){} });
+
+/* ---------- sources ---------- */
+function stopVideo(){
+  if (S.stream){ S.stream.getTracks().forEach(t => t.stop()); S.stream = null; }
+  video.pause(); video.srcObject = null;
+  if (S.clipUrl){ URL.revokeObjectURL(S.clipUrl); S.clipUrl = null; }
+  video.removeAttribute("src");
+}
+function clearSetup(){
+  S.target = null; S.line = null; S.car = null; S.fps = 0; S.lastT = 0; S.now = 0; $("swatch").style.background = "";
+  setTool("color"); resetLaps();
+}
+function setSource(s){
+  S.source = s;
+  $("btnDemo").setAttribute("aria-pressed", s === "demo"); $("btnCam").setAttribute("aria-pressed", s === "cam");
+  $("btnPlay").hidden = $("btnRestart").hidden = s !== "clip";
+  $("camSel").hidden = !(s === "cam" && $("camSel").options.length > 1);
+}
+function startVFC(){
+  if (!hasVFC || S.vfcOn) return; S.vfcOn = true;
+  const cb = (now, meta) => {
+    if (S.source === "cam") analyse(now / 1000); else if (S.source === "clip") analyse(meta.mediaTime);
+    video.requestVideoFrameCallback(cb);
+  };
+  video.requestVideoFrameCallback(cb);
+}
+video.addEventListener("loadedmetadata", () => { if (video.videoWidth){ setSize(video.videoWidth, video.videoHeight); } });
+
+async function startCam(deviceId){
+  const note = $("camNote");
+  try {
+    stopVideo();
+    const v = {width: {ideal: 1280}, height: {ideal: 720}, frameRate: {ideal: 60}};
+    if (deviceId) v.deviceId = {exact: deviceId}; else v.facingMode = {ideal: "environment"};
+    const stream = await navigator.mediaDevices.getUserMedia({video: v, audio: false});
+    if (S.source === "demo" && $("len").dataset.demo){ $("len").value = ""; delete $("len").dataset.demo; }
+    S.stream = stream; video.srcObject = stream; S.drawable = video;
+    clearSetup(); setSource("cam"); await video.play(); startVFC();
+    note.hidden = true;
+    const devs = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    const sel = $("camSel"), cur = stream.getVideoTracks()[0].getSettings().deviceId;
+    sel.innerHTML = ""; devs.forEach((d, i) => { const o = document.createElement("option"); o.value = d.deviceId; o.textContent = d.label || "Camera " + (i + 1); o.selected = d.deviceId === cur; sel.appendChild(o); });
+    sel.hidden = devs.length < 2;
+  } catch(e){
+    note.hidden = false;
+    note.textContent = e && e.name === "NotAllowedError" ? "The camera was blocked. Allow camera access for this page in your browser, then press Use camera again."
+      : "No camera could be started (" + (e && e.name || "error") + "). Check that one is connected and not in use by another app.";
+  }
+}
+$("btnCam").onclick = () => startCam();
+$("camSel").onchange = e => startCam(e.target.value);
+
+$("fileClip").addEventListener("change", e => {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  if ($("len").dataset.demo){ $("len").value = ""; delete $("len").dataset.demo; }
+  stopVideo();
+  S.clipUrl = URL.createObjectURL(f); video.src = S.clipUrl; video.loop = false; S.drawable = video; S.lastCT = -1;
+  clearSetup(); setSource("clip"); startVFC();
+  /* play for an instant so phones paint the first frame, then wait for the user */
+  const p = video.play(); if (p && p.then) p.then(() => { video.pause(); video.currentTime = 0; renderAll(); }).catch(() => {});
+  e.target.value = "";
+});
+$("btnPlay").onclick = () => { if (video.paused){ if (video.ended){ video.currentTime = 0; resetLaps(); } video.play(); } else video.pause(); };
+$("btnRestart").onclick = () => { video.pause(); video.currentTime = 0; resetLaps(); video.play(); };
+["play", "pause", "ended"].forEach(ev => video.addEventListener(ev, () => { $("btnPlay").textContent = video.paused ? "Play" : "Pause"; renderLive(); }));
+video.addEventListener("seeking", () => { S.prev = null; });
+
+/* ---------- demo track ---------- */
+const D = {a1: 0.6, a2: 3.4, m1: 1, m2: 0.9, lapN: 0, hide: 0, last: 0};
+function dpos(th, k){ return {x: 480 + k * 330 * Math.cos(th), y: 270 + k * (170 * Math.sin(th) + 16 * Math.sin(2 * th))}; }
+function dpath(k){ dctx.beginPath(); for (let i = 0; i <= 180; i++){ const p = dpos(i / 180 * Math.PI * 2, k); i ? dctx.lineTo(p.x, p.y) : dctx.moveTo(p.x, p.y); } dctx.closePath(); }
+function dcar(th, k, color){
+  const p = dpos(th, k), q = dpos(th + 0.01, k);
+  dctx.save(); dctx.translate(p.x, p.y); dctx.rotate(Math.atan2(q.y - p.y, q.x - p.x));
+  dctx.fillStyle = color; dctx.beginPath(); dctx.roundRect ? dctx.roundRect(-17, -9, 34, 18, 5) : dctx.rect(-17, -9, 34, 18); dctx.fill();
+  dctx.fillStyle = "rgba(0,0,0,.45)"; dctx.fillRect(-3, -7, 9, 14); dctx.restore();
+}
+function stepDemo(ts){
+  const dt = Math.min(0.05, D.last ? (ts - D.last) / 1000 : 0); D.last = ts;
+  const w = th => 1.5 * (1 - 0.35 * Math.cos(2 * th));
+  if (D.hide > 0) D.hide -= dt;
+  else {
+    const before = D.a1; D.a1 += w(D.a1) * D.m1 * dt;
+    if (Math.floor(D.a1 / (2 * Math.PI)) > Math.floor(before / (2 * Math.PI))){ D.lapN++; D.m1 = 0.93 + Math.random() * 0.14; }
+    if (D.lapN >= 5 && Math.random() < dt * 0.03) D.hide = 2.6;
+  }
+  D.a2 += w(D.a2) * D.m2 * dt;
+  dctx.fillStyle = "#6c7d72"; dctx.fillRect(0, 0, 960, 540);
+  dctx.lineJoin = "round";
+  dpath(1); dctx.strokeStyle = "#e8e4d8"; dctx.lineWidth = 80; dctx.stroke();
+  dpath(1); dctx.strokeStyle = "#24272b"; dctx.lineWidth = 70; dctx.stroke();
+  [0.955, 1.045].forEach(k => { dpath(k); dctx.strokeStyle = "#8d949b"; dctx.lineWidth = 2; dctx.stroke(); });
+  dcar(D.a2, 1.045, "#2f7bff");
+  if (D.hide <= 0) dcar(D.a1, 0.955, "#ff3d1f");
+}
+function startDemo(){
+  stopVideo(); S.drawable = demoCv; setSize(960, 540); clearSetup(); setSource("demo");
+  setTarget(255, 61, 31); S.line = {x1: 385, y1: 135, x2: 425, y2: 135};
+  $("len").value = "24"; $("len").dataset.demo = "1"; $("unit").value = "ft"; $("scale").value = "32";
+  renderAll();
+}
+$("btnDemo").onclick = startDemo;
+
+/* ---------- controls ---------- */
+$("tol").oninput = e => { $("tolOut").textContent = e.target.value; };
+$("len").oninput = () => { delete $("len").dataset.demo; calibrate(); renderAll(); };
+$("unit").onchange = $("scale").onchange = () => renderAll();
+$("btnReset").onclick = resetLaps;
+$("btnCopy").onclick = async () => {
+  const L = trackLen(), u = unit();
+  const csv = "lap,time_s,speed_" + u + "_per_s\n" + S.laps.map(l => l.n + "," + l.time.toFixed(3) + "," + (L ? (L / l.time).toFixed(2) : "")).join("\n");
+  const b = $("btnCopy");
+  try { await navigator.clipboard.writeText(csv); b.textContent = "Copied"; }
+  catch(e){ const t = $("csvOut"); t.value = csv; t.hidden = false; t.select(); b.textContent = "Select and copy below"; }
+  setTimeout(() => { b.textContent = "Copy laps"; }, 1800);
+};
+
+/* ---------- camera availability ---------- */
+(function(){
+  let framed; try { framed = window.self !== window.top; } catch(e){ framed = true; }
+  const has = !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+  if (framed || !has || !window.isSecureContext){
+    $("btnCam").hidden = true; $("camNote").hidden = false;
+    $("camNote").textContent = framed
+      ? "Live camera is not available inside this page. Film your track, then use Load a clip to time it here. For live timing, open the standalone file in a browser on a computer with a webcam."
+      : "Live camera needs a secure page. Open this file directly in Chrome or Edge, or serve it over https. Loading a clip works anywhere.";
+  }
+})();
+
+/* ---------- main loop ---------- */
+let lastUI = 0;
+function frame(ts){
+  requestAnimationFrame(frame);
+  if (S.source === "demo"){ stepDemo(ts); analyse(ts / 1000); }
+  else if (!hasVFC){
+    if (S.source === "cam") analyse(ts / 1000);
+    else if (video.currentTime !== S.lastCT){ S.lastCT = video.currentTime; analyse(video.currentTime); }
+  }
+  draw();
+  if (ts - lastUI > 100){ lastUI = ts; renderLive(); }
+}
+window.addEventListener("resize", drawChart);
+startDemo();
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
